@@ -1,55 +1,22 @@
-import 'dart:async';
-import 'dart:ui';
+import 'dart:math';
 
+import 'package:bonfire/base/game_component.dart';
 import 'package:bonfire/util/collision/collision.dart';
 import 'package:bonfire/util/collision/object_collision.dart';
-import 'package:bonfire/util/direction.dart';
-import 'package:bonfire/util/objects/animated_object.dart';
-import 'package:bonfire/util/objects/animated_object_once.dart';
-import 'package:flame/animation.dart' as FlameAnimation;
+import 'package:bonfire/util/interval_tick.dart';
+import 'package:bonfire/util/mixins/attackable.dart';
+import 'package:bonfire/util/priority_layer.dart';
 import 'package:flame/position.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
-export 'package:bonfire/enemy/extensions.dart';
-
 /// It is used to represent your enemies.
-class Enemy extends AnimatedObject with ObjectCollision {
-  /// Animation that was used when enemy stay stopped on the right.
-  final FlameAnimation.Animation animationIdleRight;
-
-  /// Animation that was used when enemy stay stopped on the left.
-  final FlameAnimation.Animation animationIdleLeft;
-
-  /// Animation that was used when enemy stay stopped on the top.
-  final FlameAnimation.Animation animationIdleTop;
-
-  /// Animation that was used when enemy stay stopped on the bottom.
-  final FlameAnimation.Animation animationIdleBottom;
-
-  /// Animation used when the enemy walks to the top.
-  final FlameAnimation.Animation animationRunTop;
-
-  /// Animation used when the enemy walks to the right.
-  final FlameAnimation.Animation animationRunRight;
-
-  /// Animation used when the enemy walks to the left.
-  final FlameAnimation.Animation animationRunLeft;
-
-  /// Animation used when the enemy walks to the bottom.
-  final FlameAnimation.Animation animationRunBottom;
-
-  /// Variable that represents the speed of the enemy.
-  final double speed;
-
+class Enemy extends GameComponent with ObjectCollision, Attackable {
   /// Height of the Enemy.
   final double height;
 
   /// Width of the Enemy.
   final double width;
-
-  /// World position that this enemy must position yourself.
-  final Position initPosition;
 
   /// Life of the Enemy.
   double life;
@@ -59,188 +26,176 @@ class Enemy extends AnimatedObject with ObjectCollision {
 
   bool _isDead = false;
 
-  /// Last position the enemy was in.
-  Direction lastDirection;
-
-  /// Last horizontal position the enemy was in.
-  Direction lastDirectionHorizontal;
-
   /// Map available to store times that can be used to control the frequency of any action.
-  Map<String, Timer> timers = Map();
+  Map<String, IntervalTick> timers = Map();
+
+  double dtUpdate = 0;
+
+  bool collisionOnlyVisibleScreen = true;
+
+  @override
+  get isAttackableEnemy => true;
 
   Enemy(
-      {@required this.animationIdleRight,
-      @required this.animationIdleLeft,
-      this.animationIdleTop,
-      this.animationIdleBottom,
-      this.animationRunTop,
-      @required this.animationRunRight,
-      @required this.animationRunLeft,
-      this.animationRunBottom,
-      @required this.initPosition,
+      {@required Position initPosition,
       @required this.height,
       @required this.width,
-      Direction initDirection = Direction.right,
-      this.speed = 3,
       this.life = 10,
       Collision collision}) {
-    lastDirection = initDirection;
     maxLife = life;
-    this.position = this.positionInWorld = Rect.fromLTWH(
+    this.position = Rect.fromLTWH(
       initPosition.x,
       initPosition.y,
       width,
       height,
     );
-
-    this.collision = collision ?? Collision(width: width, height: height / 2);
-
-    lastDirectionHorizontal =
-        initDirection == Direction.left ? Direction.left : Direction.right;
-
-    idle();
+    this.collisions = [
+      collision ?? Collision(width: width, height: height / 2)
+    ];
   }
 
   bool get isDead => _isDead;
 
   @override
   void render(Canvas canvas) {
-    if (isVisibleInMap()) {
-      super.render(canvas);
-      if (gameRef != null && gameRef.showCollisionArea) {
-        drawCollision(canvas, position, gameRef.collisionAreaColor);
-      }
+    super.render(canvas);
+    if (gameRef != null && gameRef.showCollisionArea) {
+      drawCollision(canvas, position, gameRef.collisionAreaColor);
     }
   }
 
   @override
   void update(double dt) {
     super.update(dt);
+    dtUpdate = dt;
   }
 
-  void translate(double translateX, double translateY) {
-    positionInWorld = positionInWorld.translate(translateX, translateY);
-  }
-
-  void moveTop({double moveSpeed}) {
-    double speed = moveSpeed ?? this.speed;
-
+  void moveTop(double speed) {
     var collision = isCollisionTranslate(
       position,
       0,
       (speed * -1),
       gameRef,
+      onlyVisible: collisionOnlyVisibleScreen,
     );
 
     if (collision) return;
 
-    positionInWorld = positionInWorld.translate(0, (speed * -1));
-
-    if (lastDirection != Direction.top) {
-      animation = animationRunTop ??
-          (lastDirectionHorizontal == Direction.right
-              ? animationRunRight
-              : animationRunLeft);
-      lastDirection = Direction.top;
-    }
+    position = position.translate(0, (speed * -1));
   }
 
-  void moveBottom({double moveSpeed}) {
-    double speed = moveSpeed ?? this.speed;
-
+  void moveBottom(double speed) {
     var collision = isCollisionTranslate(
       position,
       0,
       speed,
       gameRef,
+      onlyVisible: collisionOnlyVisibleScreen,
     );
     if (collision) return;
 
-    positionInWorld = positionInWorld.translate(0, speed);
-
-    if (lastDirection != Direction.bottom) {
-      animation = animationRunBottom ??
-          (lastDirectionHorizontal == Direction.right
-              ? animationRunRight
-              : animationRunLeft);
-      lastDirection = Direction.bottom;
-    }
+    position = position.translate(0, speed);
   }
 
-  void moveLeft({double moveSpeed}) {
-    double speed = moveSpeed ?? this.speed;
-
+  void moveLeft(double speed) {
     var collision = isCollisionTranslate(
       position,
       (speed * -1),
       0,
       gameRef,
+      onlyVisible: collisionOnlyVisibleScreen,
     );
     if (collision) return;
 
-    positionInWorld = positionInWorld.translate((speed * -1), 0);
-    if (lastDirection != Direction.left) {
-      animation = animationRunLeft;
-      lastDirection = Direction.left;
-    }
-    lastDirectionHorizontal = Direction.left;
+    position = position.translate((speed * -1), 0);
   }
 
-  void moveRight({double moveSpeed}) {
-    double speed = moveSpeed ?? this.speed;
-
+  void moveRight(double speed) {
     var collision = isCollisionTranslate(
       position,
       speed,
       0,
       gameRef,
+      onlyVisible: collisionOnlyVisibleScreen,
     );
 
     if (collision) return;
 
-    positionInWorld = positionInWorld.translate(speed, 0);
-    if (lastDirection != Direction.right) {
-      animation = animationRunRight;
-      lastDirection = Direction.right;
-    }
-    lastDirectionHorizontal = Direction.right;
+    position = position.translate(speed, 0);
   }
 
-  void idle() {
-    switch (lastDirection) {
-      case Direction.left:
-        animation = animationIdleLeft;
-        break;
-      case Direction.right:
-        animation = animationIdleRight;
-        break;
-      case Direction.top:
-        if (animationIdleTop != null) {
-          animation = animationIdleTop;
-        } else {
-          if (lastDirectionHorizontal == Direction.left) {
-            animation = animationIdleLeft;
-          } else {
-            animation = animationIdleRight;
-          }
-        }
-        break;
-      case Direction.bottom:
-        if (animationIdleBottom != null) {
-          animation = animationIdleBottom;
-        } else {
-          if (lastDirectionHorizontal == Direction.left) {
-            animation = animationIdleLeft;
-          } else {
-            animation = animationIdleRight;
-          }
-        }
+  void moveFromAngleDodgeObstacles(double speed, double angle,
+      {Function notMove}) {
+    double innerSpeed = (speed * dtUpdate);
+    double nextX = innerSpeed * cos(angle);
+    double nextY = innerSpeed * sin(angle);
+    Offset nextPoint = Offset(nextX, nextY);
 
-        break;
+    Offset diffBase = Offset(position.center.dx + nextPoint.dx,
+            position.center.dy + nextPoint.dy) -
+        position.center;
+
+    var collisionX = isCollisionTranslate(
+      position,
+      diffBase.dx,
+      0,
+      gameRef,
+    );
+
+    var collisionY = isCollisionTranslate(
+      position,
+      0,
+      diffBase.dy,
+      gameRef,
+    );
+    Offset newDiffBase = diffBase;
+    if (collisionX) {
+      newDiffBase = Offset(0, newDiffBase.dy);
     }
+    if (collisionY) {
+      newDiffBase = Offset(newDiffBase.dx, 0);
+    }
+
+    if (collisionX && !collisionY && newDiffBase.dy != 0) {
+      var collisionY = isCollisionTranslate(
+        position,
+        0,
+        innerSpeed,
+        gameRef,
+      );
+      if (!collisionY) newDiffBase = Offset(0, innerSpeed);
+    }
+
+    if (collisionY && !collisionX && newDiffBase.dx != 0) {
+      var collisionX = isCollisionTranslate(
+        position,
+        innerSpeed,
+        0,
+        gameRef,
+      );
+      if (!collisionX) newDiffBase = Offset(innerSpeed, 0);
+    }
+
+    if (newDiffBase == Offset.zero && notMove != null) {
+      notMove();
+    }
+    this.position = position.shift(newDiffBase);
   }
 
-  void receiveDamage(double damage) {
+  void moveFromAngle(double speed, double angle) {
+    double innerSpeed = (speed * dtUpdate);
+    double nextX = innerSpeed * cos(angle);
+    double nextY = innerSpeed * sin(angle);
+    Offset nextPoint = Offset(nextX, nextY);
+
+    Offset diffBase = Offset(position.center.dx + nextPoint.dx,
+            position.center.dy + nextPoint.dy) -
+        position.center;
+    this.position = position.shift(diffBase);
+  }
+
+  @override
+  void receiveDamage(double damage, dynamic from) {
     if (life > 0) {
       life -= damage;
       if (life <= 0) {
@@ -260,32 +215,22 @@ class Enemy extends AnimatedObject with ObjectCollision {
     _isDead = true;
   }
 
-  void addFastAnimation(FlameAnimation.Animation animation) {
-    AnimatedObjectOnce fastAnimation = AnimatedObjectOnce(
-      animation: animation,
-      onlyUpdate: true,
-      onFinish: () {
-        idle();
-      },
-    );
-    this.animation = fastAnimation.animation;
-    gameRef.add(fastAnimation);
-  }
-
-  bool checkPassedInterval(String name, int intervalInMilli) {
-    if (this.timers[name] == null) {
-      this.timers[name] = Timer(
-        Duration(milliseconds: intervalInMilli),
-        () {
-          this.timers[name] = null;
-        },
-      );
+  bool checkPassedInterval(String name, int intervalInMilli, double dt) {
+    if (this.timers[name] == null ||
+        (this.timers[name] != null &&
+            this.timers[name].interval != intervalInMilli)) {
+      this.timers[name] = IntervalTick(intervalInMilli);
       return true;
     } else {
-      return false;
+      return this.timers[name].update(dt);
     }
   }
 
   Rect get rectCollision => getRectCollision(position);
-  Rect get rectCollisionInWorld => getRectCollision(positionInWorld);
+
+  @override
+  int priority() => PriorityLayer.ENEMY;
+
+  @override
+  Rect rectAttackable() => rectCollision;
 }

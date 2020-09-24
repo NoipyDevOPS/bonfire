@@ -17,7 +17,7 @@ class TalkDialog extends StatefulWidget {
 
   static show(
     BuildContext context,
-    List<Say> talkList, {
+    List<Say> sayList, {
     VoidCallback finish,
     ValueChanged<int> onChangeTalk,
     TextStyle textStyle,
@@ -29,7 +29,7 @@ class TalkDialog extends StatefulWidget {
       context: context,
       builder: (BuildContext context) {
         return TalkDialog(
-          says: talkList,
+          says: sayList,
           finish: finish,
           onChangeTalk: onChangeTalk,
           textStyle: textStyle,
@@ -178,7 +178,11 @@ class _TalkDialogState extends State<TalkDialog> {
           SizedBox(
             width: 10,
           ),
-        currentSay.person,
+        Container(
+          height: widget.boxTextHeight,
+          width: widget.boxTextHeight,
+          child: currentSay.person,
+        ),
         if (direction == PersonDirection.LEFT)
           SizedBox(
             width: 10,

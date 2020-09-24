@@ -1,103 +1,78 @@
-import 'dart:math';
-
 import 'package:bonfire/bonfire.dart';
-import 'package:example/enemy/goblin.dart';
-import 'package:example/map/dungeon_map.dart';
-import 'package:example/player/knight.dart';
-import 'package:example/player/knight_interface.dart';
-import 'package:flame/animation.dart' as FlameAnimation;
+import 'package:example/game_manual_map.dart';
+import 'package:example/game_tiled_map.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Flame.util.setLandscape();
-  await Flame.util.fullScreen();
+  await Flame.util.setLandscape(); //TODO Comment when running for web
+  await Flame.util.fullScreen(); //TODO Comment when running for web
   runApp(
     MaterialApp(
-      home: Game(),
+      home: Menu(),
     ),
   );
 }
 
-class Game extends StatelessWidget implements GameListener {
-  static const sizeTile = 32.0;
-
-  final GameController _controller = GameController();
-
+class Menu extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
-    return BonfireWidget(
-      joystick: Joystick(
-        pathSpriteBackgroundDirectional: 'joystick_background.png',
-        pathSpriteKnobDirectional: 'joystick_knob.png',
-        sizeDirectional: 100,
-        marginLeftDirectional: 150,
-        actions: [
-          JoystickAction(
-            actionId: 0,
-            pathSprite: 'joystick_atack.png',
-            size: 80,
-            margin: EdgeInsets.only(bottom: 50, right: 50),
+    return Scaffold(
+      backgroundColor: Colors.cyan[900],
+      body: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Text(
+              'Bonfire',
+              style: TextStyle(fontSize: 30, color: Colors.white),
+            ),
+            SizedBox(
+              height: 30,
+            ),
+            SizedBox(
+              width: 200,
+              child: RaisedButton(
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(20)),
+                child: Text('Manual Map'),
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => GameManualMap()),
+                  );
+                },
+              ),
+            ),
+            SizedBox(
+              height: 10,
+            ),
+            SizedBox(
+              width: 200,
+              child: RaisedButton(
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(20)),
+                child: Text('Tiled Map'),
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => GameTiledMap()),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+      bottomNavigationBar: Container(
+        height: 40,
+        child: Center(
+          child: Text(
+            'Keyboard: directional and Space Bar to attack',
+            style: TextStyle(fontSize: 18),
           ),
-          JoystickAction(
-            actionId: 1,
-            pathSprite: 'joystick_atack_range.png',
-            size: 50,
-            margin: EdgeInsets.only(bottom: 50, right: 160),
-          )
-        ],
-      ),
-      player: Knight(
-        initPosition: Position(5 * sizeTile, 6 * sizeTile),
-      ),
-      interface: KnightInterface(),
-      map: DungeonMap.map(),
-      decorations: DungeonMap.decorations(),
-      enemies: DungeonMap.enemies(),
-      background: BackgroundColorGame(Colors.blueGrey[900]),
-      gameController: _controller..setListener(this),
-    );
-  }
-
-  @override
-  void updateGame() {}
-
-  @override
-  void changeCountLiveEnemies(int count) {
-    if (count < 2) {
-      _addEnemyInWorld();
-    }
-  }
-
-  void _addEnemyInWorld() {
-    double x = sizeTile * (2 + Random().nextInt(27));
-    double y = sizeTile * (5 + Random().nextInt(3));
-
-    Position position = Position(
-      x,
-      y,
-    );
-    _controller.addComponent(
-      AnimatedObjectOnce(
-        animation: FlameAnimation.Animation.sequenced(
-          "smoke_explosin.png",
-          6,
-          textureWidth: 16,
-          textureHeight: 16,
         ),
-        position: Rect.fromLTWH(
-          position.x,
-          position.y,
-          sizeTile,
-          sizeTile,
-        ),
-      ),
-    );
-
-    _controller.addEnemy(
-      Goblin(
-        initPosition: position,
       ),
     );
   }

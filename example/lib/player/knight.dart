@@ -1,77 +1,95 @@
-import 'dart:async';
 import 'dart:ui';
 
 import 'package:bonfire/bonfire.dart';
-import 'package:flame/animation.dart' as FlameAnimation;
+import 'package:example/map/dungeon_map.dart';
+import 'package:example/util/common_sprite_sheet.dart';
+import 'package:example/util/player_sprite_sheet.dart';
+import 'package:flutter/cupertino.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
-class Knight extends Player {
+class Knight extends SimplePlayer with Lighting {
   final Position initPosition;
   double attack = 20;
   double stamina = 100;
-  Timer _timerStamina;
+  double initSpeed = DungeonMap.tileSize * 3;
+  IntervalTick _timerStamina = IntervalTick(100);
+  IntervalTick _timerAttackRange = IntervalTick(100);
+  IntervalTick _timerSeeEnemy = IntervalTick(500);
   bool showObserveEnemy = false;
   bool showTalk = false;
+  double angleRadAttack = 0.0;
+  Rect rectDirectionAttack;
+  Sprite spriteDirectionAttack;
+  bool showDirection = false;
 
-  Knight({
-    this.initPosition,
-  }) : super(
-            animIdleLeft: FlameAnimation.Animation.sequenced(
-              "player/knight_idle_left.png",
-              6,
-              textureWidth: 16,
-              textureHeight: 16,
-            ),
-            animIdleRight: FlameAnimation.Animation.sequenced(
-              "player/knight_idle.png",
-              6,
-              textureWidth: 16,
-              textureHeight: 16,
-            ),
-            animRunRight: FlameAnimation.Animation.sequenced(
-              "player/knight_run.png",
-              6,
-              textureWidth: 16,
-              textureHeight: 16,
-            ),
-            animRunLeft: FlameAnimation.Animation.sequenced(
-              "player/knight_run_left.png",
-              6,
-              textureWidth: 16,
-              textureHeight: 16,
-            ),
-            width: 32,
-            height: 32,
-            initPosition: initPosition,
-            life: 200,
-            speed: 2.5,
-            collision: Collision(height: 16, width: 16));
+  Knight(this.initPosition)
+      : super(
+          animation: PlayerSpriteSheet.simpleDirectionAnimation,
+          width: DungeonMap.tileSize,
+          height: DungeonMap.tileSize,
+          initPosition: initPosition,
+          life: 200,
+          speed: DungeonMap.tileSize * 3,
+          collision: Collision(
+            height: DungeonMap.tileSize / 2,
+            width: DungeonMap.tileSize / 1.8,
+            align: Offset(DungeonMap.tileSize / 3.5, DungeonMap.tileSize / 2),
+          ),
+        ) {
+    spriteDirectionAttack = Sprite('direction_attack.png');
+    lightingConfig = LightingConfig(
+      radius: width * 1.5,
+      blurBorder: width * 1.5,
+    );
+  }
 
   @override
-  void joystickAction(int action) {
+  void joystickChangeDirectional(JoystickDirectionalEvent event) {
+    this.speed = initSpeed * event.intensity;
+    super.joystickChangeDirectional(event);
+  }
+
+  @override
+  void joystickAction(JoystickActionEvent event) {
     if (isDead) return;
 
-    if (action == 0) {
+    if (gameRef.joystickController.keyboardEnable) {
+      if (event.id == LogicalKeyboardKey.space.keyId) {
+        actionAttack();
+      }
+    }
+
+    if (event.id == 0 && event.event == ActionEvent.DOWN) {
       actionAttack();
     }
 
-    if (action == 1) {
-      actionAttackRange();
+    if (event.id == 1) {
+      if (event.event == ActionEvent.MOVE) {
+        showDirection = true;
+        angleRadAttack = event.radAngle;
+        if (_timerAttackRange.update(dtUpdate)) actionAttackRange();
+      }
+      if (event.event == ActionEvent.UP) {
+        showDirection = false;
+        actionAttackRange();
+      }
     }
 
-    super.joystickAction(action);
+    super.joystickAction(event);
   }
 
   @override
   void die() {
     remove();
-    gameRef.addDecoration(
+    gameRef.addGameComponent(
       GameDecoration(
         initPosition: Position(
-          positionInWorld.left,
-          positionInWorld.top,
+          position.left,
+          position.top,
         ),
-        height: 30,
-        width: 30,
+        height: DungeonMap.tileSize,
+        width: DungeonMap.tileSize,
         sprite: Sprite('player/crypt.png'),
       ),
     );
@@ -84,114 +102,75 @@ class Knight extends Player {
     decrementStamina(15);
     this.simpleAttackMelee(
       damage: attack,
-      attackEffectBottomAnim: FlameAnimation.Animation.sequenced(
-        'player/atack_effect_bottom.png',
-        6,
-        textureWidth: 16,
-        textureHeight: 16,
-      ),
-      attackEffectLeftAnim: FlameAnimation.Animation.sequenced(
-        'player/atack_effect_left.png',
-        6,
-        textureWidth: 16,
-        textureHeight: 16,
-      ),
-      attackEffectRightAnim: FlameAnimation.Animation.sequenced(
-        'player/atack_effect_right.png',
-        6,
-        textureWidth: 16,
-        textureHeight: 16,
-      ),
-      attackEffectTopAnim: FlameAnimation.Animation.sequenced(
-        'player/atack_effect_top.png',
-        6,
-        textureWidth: 16,
-        textureHeight: 16,
-      ),
+      animationBottom: CommonSpriteSheet.whiteAttackEffectBottom,
+      animationLeft: CommonSpriteSheet.whiteAttackEffectLeft,
+      animationRight: CommonSpriteSheet.whiteAttackEffectRight,
+      animationTop: CommonSpriteSheet.whiteAttackEffectTop,
+      heightArea: DungeonMap.tileSize,
+      widthArea: DungeonMap.tileSize,
     );
   }
 
   void actionAttackRange() {
     if (stamina < 10) return;
 
-    decrementStamina(10);
-    this.simpleAttackRange(
-      animationRight: FlameAnimation.Animation.sequenced(
-        'player/fireball_right.png',
-        3,
-        textureWidth: 23,
-        textureHeight: 23,
-      ),
-      animationLeft: FlameAnimation.Animation.sequenced(
-        'player/fireball_left.png',
-        3,
-        textureWidth: 23,
-        textureHeight: 23,
-      ),
-      animationTop: FlameAnimation.Animation.sequenced(
-        'player/fireball_top.png',
-        3,
-        textureWidth: 23,
-        textureHeight: 23,
-      ),
-      animationBottom: FlameAnimation.Animation.sequenced(
-        'player/fireball_bottom.png',
-        3,
-        textureWidth: 23,
-        textureHeight: 23,
-      ),
-      animationDestroy: FlameAnimation.Animation.sequenced(
-        'player/explosion_fire.png',
-        6,
-        textureWidth: 32,
-        textureHeight: 32,
-      ),
-      width: 25,
-      height: 25,
+    this.simpleAttackRangeByAngle(
+      id: {'ddd': 'kkkkk'},
+      animationTop: CommonSpriteSheet.fireBallTop,
+      animationDestroy: CommonSpriteSheet.explosionAnimation,
+      radAngleDirection: angleRadAttack,
+      width: width * 0.7,
+      height: width * 0.7,
       damage: 10,
-      speed: speed * 1.5,
+      speed: initSpeed * 2,
+      collision: Collision(
+        width: width / 2,
+        height: width / 2,
+        align: Offset(width * 0.1, 0),
+      ),
+      lightingConfig: LightingConfig(
+        radius: width * 0.5,
+        blurBorder: width,
+      ),
     );
   }
 
   @override
   void update(double dt) {
-    if (this.isDead) return;
-    _verifyStamina();
-    this.seeEnemy(
-      visionCells: 8,
-      notObserved: () {
-        showObserveEnemy = false;
-      },
-      observed: (enemies) {
-        if (showObserveEnemy) return;
-        showObserveEnemy = true;
-        _showEmote();
-        if (!showTalk) {
-          showTalk = true;
-          _showTalk();
-        }
-      },
-    );
+    if (this.isDead || gameRef?.size == null) return;
+    _verifyStamina(dt);
+
+    if (_timerSeeEnemy.update(dt) && !showObserveEnemy) {
+      this.seeEnemy(
+        radiusVision: width * 5,
+        notObserved: () {
+          showObserveEnemy = false;
+        },
+        observed: (enemies) {
+          showObserveEnemy = true;
+          showEmote();
+          if (!showTalk) {
+            showTalk = true;
+            _showTalk(enemies.first);
+          }
+        },
+      );
+    }
     super.update(dt);
   }
 
   @override
   void render(Canvas c) {
+    _drawDirectionAttack(c);
     super.render(c);
   }
 
-  void _verifyStamina() {
-    if (_timerStamina == null) {
-      _timerStamina = Timer(Duration(milliseconds: 150), () {
-        _timerStamina = null;
-      });
-    } else {
-      return;
-    }
-
-    stamina += 2;
-    if (stamina > 100) {
-      stamina = 100;
+  void _verifyStamina(double dt) {
+    if (_timerStamina.update(dt) && stamina < 100) {
+      stamina += 2;
+      if (stamina > 100) {
+        stamina = 100;
+      }
     }
   }
 
@@ -203,40 +182,56 @@ class Knight extends Player {
   }
 
   @override
-  void receiveDamage(double damage) {
-    this.showDamage(damage);
-    super.receiveDamage(damage);
+  void receiveDamage(double damage, dynamic from) {
+    this.showDamage(damage,
+        config: TextConfig(
+          fontSize: width / 3,
+          color: Colors.red,
+        ));
+    super.receiveDamage(damage, from);
   }
 
-  void _showEmote() {
+  void showEmote() {
     gameRef.add(
       AnimatedFollowerObject(
-        animation: FlameAnimation.Animation.sequenced(
-          'player/emote_exclamacao.png',
-          8,
-          textureWidth: 32,
-          textureHeight: 32,
-        ),
+        animation: CommonSpriteSheet.emote,
         target: this,
-        width: 16,
-        height: 16,
-        positionFromTarget: Position(18, -6),
+        positionFromTarget: Rect.fromLTWH(18, -6, width / 2, height / 2),
       ),
     );
   }
 
-  void _showTalk() {
-    TalkDialog.show(
-      gameRef.context,
-      [
+  void _showTalk(Enemy first) {
+    gameRef.gameCamera.moveToTargetAnimated(first, zoom: 2, finish: () {
+      TalkDialog.show(gameRef.context, [
         Say(
           "Look at this! It seems that I'm not alone here ...",
-          Flame.util.animationAsWidget(
-            Position(100, 100),
-            animation,
+          Container(
+            width: 50,
+            height: 50,
+            child: AnimationWidget(
+              animation: animation.current,
+              playing: true,
+            ),
           ),
         ),
-      ],
-    );
+      ], finish: () {
+        gameRef.gameCamera.moveToPlayerAnimated();
+      });
+    });
+  }
+
+  void _drawDirectionAttack(Canvas c) {
+    if (showDirection) {
+      double radius = position.height;
+      rectDirectionAttack = Rect.fromLTWH(position.center.dx - radius,
+          position.center.dy - radius, radius * 2, radius * 2);
+      renderSpriteByRadAngle(
+        c,
+        angleRadAttack,
+        rectDirectionAttack,
+        spriteDirectionAttack,
+      );
+    }
   }
 }

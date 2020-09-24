@@ -24,8 +24,7 @@ dependencies:
     path: ".."
 
 dev_dependencies:
-  flutter_test:
-    sdk: flutter
+  test: any
 
 
 # For information on the generic Dart part of this file, see the
@@ -44,4 +43,5 @@ flutter:
     - assets/images/player/
     - assets/images/enemy/
     - assets/images/tile/
+    - assets/images/tiled/
     - assets/images/itens/

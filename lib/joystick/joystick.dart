@@ -1,288 +1,141 @@
-import 'dart:math';
-import 'dart:ui';
-
 import 'package:bonfire/joystick/joystick_action.dart';
 import 'package:bonfire/joystick/joystick_controller.dart';
-import 'package:bonfire/util/gesture/pointer_detector.dart';
-import 'package:flame/sprite.dart';
+import 'package:bonfire/joystick/joystick_directional.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
-class Joystick extends JoystickController with PointerDetector {
-  double _backgroundAspectRatio = 2.2;
-  Rect _backgroundRect;
-  Sprite _backgroundSprite;
-
-  Rect _knobRect;
-  Sprite _knobSprite;
-
-  bool _dragging = false;
-  Offset _dragPosition;
-
-  double _sensitivity = 6;
-
-  double _tileSize;
-  Size _screenSize;
-
-  int currentGesturePointer = 0;
-
-  final double sizeDirectional;
-  final double marginBottomDirectional;
-  final double marginLeftDirectional;
-  final String pathSpriteBackgroundDirectional;
-  final String pathSpriteKnobDirectional;
+class Joystick extends JoystickController {
   final List<JoystickAction> actions;
+  final JoystickDirectional directional;
+  final bool keyboardEnable;
+  bool _isDirectionalDownKeyboard = false;
+  LogicalKeyboardKey _currentDirectionalKey;
 
   Joystick({
-    @required this.pathSpriteBackgroundDirectional,
-    @required this.pathSpriteKnobDirectional,
     this.actions,
-    this.sizeDirectional = 80,
-    this.marginBottomDirectional = 100,
-    this.marginLeftDirectional = 100,
-  }) {
-    _backgroundSprite = Sprite(pathSpriteBackgroundDirectional);
-    _knobSprite = Sprite(pathSpriteKnobDirectional);
-    _tileSize = sizeDirectional / 2;
-  }
+    this.directional,
+    this.keyboardEnable = false,
+  });
 
-  void initialize() async {
-    _screenSize = gameRef.size;
-    Offset osBackground = Offset(
-        marginLeftDirectional, _screenSize.height - marginBottomDirectional);
-    _backgroundRect =
-        Rect.fromCircle(center: osBackground, radius: sizeDirectional / 2);
-
-    Offset osKnob =
-        Offset(_backgroundRect.center.dx, _backgroundRect.center.dy);
-    _knobRect = Rect.fromCircle(center: osKnob, radius: sizeDirectional / 4);
-
-    _dragPosition = _knobRect.center;
-
-    if (actions != null) {
-      actions.forEach((action) => _setRectInAction(action));
-    }
-  }
-
-  void _setRectInAction(JoystickAction action) {
-    double radius = action.size / 2;
-    double dx = 0, dy = 0;
-    switch (action.align) {
-      case JoystickActionAlign.TOP_LEFT:
-        dx = action.margin.left + radius;
-        dy = action.margin.top + radius;
-        break;
-      case JoystickActionAlign.BOTTOM_LEFT:
-        dx = action.margin.left + radius;
-        dy = _screenSize.height - (action.margin.bottom + radius);
-        break;
-      case JoystickActionAlign.TOP_RIGHT:
-        dx = _screenSize.width - (action.margin.right + radius);
-        dy = action.margin.top + radius;
-        break;
-      case JoystickActionAlign.BOTTOM_RIGHT:
-        dx = _screenSize.width - (action.margin.right + radius);
-        dy = _screenSize.height - (action.margin.bottom + radius);
-        break;
-    }
-    action.rect = Rect.fromCircle(
-      center: Offset(dx, dy),
-      radius: radius,
-    );
+  void initialize(Size size) async {
+    if (directional != null) directional.initialize(size, this);
+    if (actions != null)
+      actions.forEach((action) => action.initialize(size, this));
   }
 
   void addAction(JoystickAction action) {
-    _setRectInAction(action);
-    actions.add(action);
+    if (actions != null && gameRef?.size != null) {
+      action.initialize(gameRef.size, this);
+      actions.add(action);
+    }
   }
 
   void removeAction(int actionId) {
-    actions.removeWhere((action) => action.actionId == actionId);
+    if (actions != null)
+      actions.removeWhere((action) => action.actionId == actionId);
   }
 
   void render(Canvas canvas) {
-    if (_backgroundSprite != null)
-      _backgroundSprite.renderRect(canvas, _backgroundRect);
-    if (_knobSprite != null) _knobSprite.renderRect(canvas, _knobRect);
-
+    if (directional != null) directional.render(canvas);
     if (actions != null) actions.forEach((action) => action.render(canvas));
   }
 
   void update(double t) {
-    if (gameRef.size != null && _screenSize != gameRef.size) {
-      initialize();
-    }
-
-    if (_backgroundRect == null) {
-      return;
-    }
-
-    if (_dragging) {
-      double _radAngle = atan2(_dragPosition.dy - _backgroundRect.center.dy,
-          _dragPosition.dx - _backgroundRect.center.dx);
-
-      // Distance between the center of joystick background & drag position
-      Point p = Point(_backgroundRect.center.dx, _backgroundRect.center.dy);
-      double dist = p.distanceTo(Point(_dragPosition.dx, _dragPosition.dy));
-
-      bool mRight = false;
-      bool mLeft = false;
-      bool mTop = false;
-      bool mBottom = false;
-
-      var diffY = _dragPosition.dy - _backgroundRect.center.dy;
-      var diffX = _dragPosition.dx - _backgroundRect.center.dx;
-      if (_dragPosition.dx > _backgroundRect.center.dx &&
-          diffX > _backgroundRect.width / _sensitivity) {
-        mRight = true;
-      }
-      if (_dragPosition.dx < _backgroundRect.center.dx &&
-          diffX < (-1 * _backgroundRect.width / _sensitivity)) {
-        mLeft = true;
-      }
-      if (_dragPosition.dy > _backgroundRect.center.dy &&
-          diffY > _backgroundRect.height / _sensitivity) {
-        mBottom = true;
-      }
-      if (_dragPosition.dy < _backgroundRect.center.dy &&
-          diffY < (-1 * _backgroundRect.height / _sensitivity)) {
-        mTop = true;
-      }
-
-      if (mRight && mTop) {
-        mRight = false;
-        mTop = false;
-        joystickListener
-            .joystickChangeDirectional(JoystickMoveDirectional.MOVE_TOP_RIGHT);
-      }
-
-      if (mRight && mBottom) {
-        mRight = false;
-        mBottom = false;
-        joystickListener.joystickChangeDirectional(
-            JoystickMoveDirectional.MOVE_BOTTOM_RIGHT);
-      }
-
-      if (mLeft && mTop) {
-        mLeft = false;
-        mTop = false;
-        joystickListener
-            .joystickChangeDirectional(JoystickMoveDirectional.MOVE_TOP_LEFT);
-      }
-
-      if (mLeft && mBottom) {
-        mLeft = false;
-        mBottom = false;
-        joystickListener.joystickChangeDirectional(
-            JoystickMoveDirectional.MOVE_BOTTOM_LEFT);
-      }
-
-      if (mRight) {
-        joystickListener
-            .joystickChangeDirectional(JoystickMoveDirectional.MOVE_RIGHT);
-      }
-
-      if (mLeft) {
-        joystickListener
-            .joystickChangeDirectional(JoystickMoveDirectional.MOVE_LEFT);
-      }
-
-      if (mBottom) {
-        joystickListener
-            .joystickChangeDirectional(JoystickMoveDirectional.MOVE_BOTTOM);
-      }
-
-      if (mTop) {
-        joystickListener
-            .joystickChangeDirectional(JoystickMoveDirectional.MOVE_TOP);
-      }
-
-      // The maximum distance for the knob position the edge of
-      // the background + half of its own size. The knob can wander in the
-      // background image, but not outside.
-      dist = dist < (_tileSize * _backgroundAspectRatio / 3)
-          ? dist
-          : (_tileSize * _backgroundAspectRatio / 3);
-
-      // Calculation the knob position
-      double nextX = dist * cos(_radAngle);
-      double nextY = dist * sin(_radAngle);
-      Offset nextPoint = Offset(nextX, nextY);
-
-      Offset diff = Offset(_backgroundRect.center.dx + nextPoint.dx,
-              _backgroundRect.center.dy + nextPoint.dy) -
-          _knobRect.center;
-      _knobRect = _knobRect.shift(diff);
-    } else {
-      if (_knobRect != null) {
-        Offset diff = _dragPosition - _knobRect.center;
-        _knobRect = _knobRect.shift(diff);
-      }
-    }
+    if (directional != null) directional.update(t);
+    if (actions != null) actions.forEach((action) => action.update(t));
   }
 
   @override
-  void onTapDown(TapDownDetails details) {
-    if (actions == null || actions.isEmpty) return;
-    actions
-        .where((action) => action.rect.contains(details.globalPosition))
-        .forEach((action) {
-      action.pressed();
-      joystickListener.joystickAction(action.actionId);
-    });
-    super.onTapDown(details);
-  }
-
-  @override
-  void onTapUp(TapUpDetails details) {
-    actions.forEach((action) {
-      action.unPressed();
-    });
-    super.onTapUp(details);
-  }
-
-  @override
-  void onTapCancel() {
-    actions.forEach((action) {
-      action.unPressed();
-    });
-    super.onTapCancel();
+  void resize(Size size) {
+    initialize(size);
+    super.resize(size);
   }
 
   void onPointerDown(PointerDownEvent event) {
-    if (_backgroundRect == null) return;
-    Rect directional = Rect.fromLTWH(
-      _backgroundRect.left - 50,
-      _backgroundRect.top - 50,
-      _backgroundRect.width + 100,
-      _backgroundRect.height + 100,
-    );
-    if (!_dragging && directional.contains(event.position)) {
-      _dragging = true;
-      currentGesturePointer = event.pointer;
-    }
+    if (directional != null)
+      directional.directionalDown(event.pointer, event.localPosition);
+    if (actions != null)
+      actions.forEach(
+          (action) => action.actionDown(event.pointer, event.localPosition));
   }
 
   void onPointerMove(PointerMoveEvent event) {
-    if (event.pointer == currentGesturePointer) {
-      if (_dragging) {
-        _dragPosition = event.position;
-      }
-    }
+    if (actions != null)
+      actions.forEach(
+          (action) => action.actionMove(event.pointer, event.localPosition));
+    if (directional != null)
+      directional.directionalMove(event.pointer, event.localPosition);
   }
 
   void onPointerUp(PointerUpEvent event) {
-    if (event.pointer == currentGesturePointer) {
-      _dragging = false;
-      _dragPosition = _backgroundRect.center;
-      joystickListener.joystickChangeDirectional(JoystickMoveDirectional.IDLE);
-    }
+    if (actions != null)
+      actions.forEach((action) => action.actionUp(event.pointer));
+
+    if (directional != null) directional.directionalUp(event.pointer);
   }
 
   void onPointerCancel(PointerCancelEvent event) {
-    if (event.pointer == currentGesturePointer) {
-      _dragging = false;
-      _dragPosition = _backgroundRect.center;
-      joystickListener.joystickChangeDirectional(JoystickMoveDirectional.IDLE);
+    if (actions != null)
+      actions.forEach((action) => action.actionUp(event.pointer));
+    if (directional != null) directional.directionalUp(event.pointer);
+  }
+
+  @override
+  void onKeyboard(RawKeyEvent event) {
+    if (!keyboardEnable) return;
+    if (event is RawKeyDownEvent) {
+      if (event.logicalKey == LogicalKeyboardKey.arrowDown) {
+        _isDirectionalDownKeyboard = true;
+        _currentDirectionalKey = event.logicalKey;
+        joystickChangeDirectional(JoystickDirectionalEvent(
+          directional: JoystickMoveDirectional.MOVE_DOWN,
+          intensity: 1.0,
+          radAngle: 0.0,
+        ));
+      }
+      if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
+        _isDirectionalDownKeyboard = true;
+        _currentDirectionalKey = event.logicalKey;
+        joystickChangeDirectional(JoystickDirectionalEvent(
+          directional: JoystickMoveDirectional.MOVE_UP,
+          intensity: 1.0,
+          radAngle: 0.0,
+        ));
+      }
+      if (event.logicalKey == LogicalKeyboardKey.arrowLeft) {
+        _isDirectionalDownKeyboard = true;
+        _currentDirectionalKey = event.logicalKey;
+        joystickChangeDirectional(JoystickDirectionalEvent(
+          directional: JoystickMoveDirectional.MOVE_LEFT,
+          intensity: 1.0,
+          radAngle: 0.0,
+        ));
+      }
+      if (event.logicalKey == LogicalKeyboardKey.arrowRight) {
+        _isDirectionalDownKeyboard = true;
+        _currentDirectionalKey = event.logicalKey;
+        joystickChangeDirectional(JoystickDirectionalEvent(
+          directional: JoystickMoveDirectional.MOVE_RIGHT,
+          intensity: 1.0,
+          radAngle: 0.0,
+        ));
+      }
+
+      if (!_isDirectionalDownKeyboard) {
+        joystickAction(JoystickActionEvent(
+          id: event.logicalKey.keyId,
+        ));
+      }
+    } else if (event is RawKeyUpEvent &&
+        _isDirectionalDownKeyboard &&
+        _currentDirectionalKey == event.logicalKey) {
+      _isDirectionalDownKeyboard = false;
+      joystickChangeDirectional(JoystickDirectionalEvent(
+        directional: JoystickMoveDirectional.IDLE,
+        intensity: 0.0,
+        radAngle: 0.0,
+      ));
     }
   }
 }

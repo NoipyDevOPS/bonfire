@@ -1,39 +1,21 @@
-import 'dart:async';
-
+import 'package:bonfire/base/rpg_game.dart';
 import 'package:bonfire/bonfire.dart';
 import 'package:bonfire/decoration/decoration.dart';
 import 'package:bonfire/enemy/enemy.dart';
-import 'package:bonfire/rpg_game.dart';
-import 'package:bonfire/util/camera.dart';
-import 'package:flame/components/component.dart';
+import 'package:bonfire/util/camera/camera.dart';
+import 'package:flame/components/mixins/has_game_ref.dart';
 
 abstract class GameListener {
   void updateGame();
   void changeCountLiveEnemies(int count);
 }
 
-class GameController {
-  Timer _timerListener;
-  int frequencyListener = 1000;
+class GameController with HasGameRef<RPGGame> {
   GameListener _gameListener;
-  RPGGame _game;
   int _lastCountLiveEnemies = 0;
 
-  void setGame(RPGGame game) {
-    _game = game;
-    _lastCountLiveEnemies = _game.enemies.length;
-  }
-
-  void addEnemy(Enemy enemy) {
-    _game.addEnemy(enemy);
-  }
-
-  void addDecoration(GameDecoration decoration) {
-    _game.addDecoration(decoration);
-  }
-
-  void addComponent(Component component) {
-    _game.add(component);
+  void addGameComponent(GameComponent component) {
+    gameRef.addGameComponent(component);
   }
 
   void setListener(GameListener listener) {
@@ -41,29 +23,26 @@ class GameController {
   }
 
   void notifyListeners() {
-    if (_timerListener == null) {
-      _timerListener = Timer(
-        Duration(milliseconds: frequencyListener),
-        () => _timerListener = null,
-      );
+    bool notifyChangeEnemy = false;
+    int countLive = livingEnemies.length;
 
-      bool notifyChangeEnemy = false;
-      int countLive = allEnemies.where((i) => !i.isDead).length;
-
-      if (_lastCountLiveEnemies != countLive) {
-        _lastCountLiveEnemies = countLive;
-        notifyChangeEnemy = true;
-      }
+    if (_lastCountLiveEnemies != countLive) {
+      _lastCountLiveEnemies = countLive;
+      notifyChangeEnemy = true;
+    }
+    if (_gameListener != null) {
       _gameListener.updateGame();
       if (notifyChangeEnemy)
         _gameListener.changeCountLiveEnemies(_lastCountLiveEnemies);
     }
   }
 
-  Iterable<GameDecoration> get visibleDecorations => _game.visibleDecorations();
-  Iterable<GameDecoration> get allDecorations => _game.decorations;
-  Iterable<Enemy> get visibleEnemies => _game.visibleEnemies();
-  Iterable<Enemy> get allEnemies => _game.enemies;
-  Player get player => _game.player;
-  Camera get camera => _game.gameCamera;
+  Iterable<GameDecoration> get visibleDecorations =>
+      gameRef.visibleDecorations();
+  Iterable<GameDecoration> get allDecorations => gameRef.decorations();
+  Iterable<Enemy> get visibleEnemies => gameRef.visibleEnemies();
+  Iterable<Enemy> get livingEnemies => gameRef.livingEnemies();
+  Iterable<GameComponent> get visibleComponents => gameRef.visibleComponents();
+  Player get player => gameRef.player;
+  Camera get camera => gameRef.gameCamera;
 }

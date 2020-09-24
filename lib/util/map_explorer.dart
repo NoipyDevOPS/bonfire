@@ -1,5 +1,5 @@
 import 'package:bonfire/joystick/joystick_controller.dart';
-import 'package:bonfire/util/camera.dart';
+import 'package:bonfire/util/camera/camera.dart';
 
 class MapExplorer implements JoystickListener {
   final Camera camera;
@@ -7,26 +7,27 @@ class MapExplorer implements JoystickListener {
   MapExplorer(this.camera);
 
   @override
-  void joystickAction(int action) {}
+  void joystickAction(JoystickActionEvent event) {}
 
   @override
-  void joystickChangeDirectional(JoystickMoveDirectional directional) {
-    camera.moveCamera(5, directional);
-    if (directional == JoystickMoveDirectional.MOVE_TOP_LEFT) {
-      camera.moveLeft(4);
-      camera.moveTop(4);
+  void joystickChangeDirectional(JoystickDirectionalEvent event) {
+    double speed = 8 * event.intensity;
+    camera.moveCamera(speed, event.directional);
+    if (event.directional == JoystickMoveDirectional.MOVE_UP_LEFT) {
+      camera.moveLeft(speed * 0.8);
+      camera.moveTop(speed * 0.8);
     }
-    if (directional == JoystickMoveDirectional.MOVE_TOP_RIGHT) {
-      camera.moveRight(4);
-      camera.moveTop(4);
+    if (event.directional == JoystickMoveDirectional.MOVE_UP_RIGHT) {
+      camera.moveRight(speed * 0.8);
+      camera.moveTop(speed * 0.8);
     }
-    if (directional == JoystickMoveDirectional.MOVE_BOTTOM_LEFT) {
-      camera.moveLeft(4);
-      camera.moveBottom(4);
+    if (event.directional == JoystickMoveDirectional.MOVE_DOWN_LEFT) {
+      camera.moveLeft(speed * 0.8);
+      camera.moveBottom(speed * 0.8);
     }
-    if (directional == JoystickMoveDirectional.MOVE_BOTTOM_RIGHT) {
-      camera.moveRight(4);
-      camera.moveBottom(4);
+    if (event.directional == JoystickMoveDirectional.MOVE_DOWN_RIGHT) {
+      camera.moveRight(speed * 0.8);
+      camera.moveBottom(speed * 0.8);
     }
   }
 }

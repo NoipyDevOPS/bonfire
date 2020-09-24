@@ -1,78 +1,59 @@
 import 'package:bonfire/bonfire.dart';
-import 'package:flame/animation.dart' as FlameAnimation;
+import 'package:example/map/dungeon_map.dart';
+import 'package:example/util/common_sprite_sheet.dart';
+import 'package:example/util/enemy_sprite_sheet.dart';
 import 'package:flame/position.dart';
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/material.dart';
 
-class Goblin extends Enemy {
-  final Position initPosition;
+class Goblin extends SimpleEnemy {
   double attack = 25;
   bool _seePlayerClose = false;
 
-  Goblin({
-    @required this.initPosition,
-  }) : super(
-            animationIdleRight: FlameAnimation.Animation.sequenced(
-              "enemy/goblin_idle.png",
-              6,
-              textureWidth: 16,
-              textureHeight: 16,
-            ),
-            animationIdleLeft: FlameAnimation.Animation.sequenced(
-              "enemy/goblin_idle_left.png",
-              6,
-              textureWidth: 16,
-              textureHeight: 16,
-            ),
-            animationRunRight: FlameAnimation.Animation.sequenced(
-              "enemy/goblin_run_right.png",
-              6,
-              textureWidth: 16,
-              textureHeight: 16,
-            ),
-            animationRunLeft: FlameAnimation.Animation.sequenced(
-              "enemy/goblin_run_left.png",
-              6,
-              textureWidth: 16,
-              textureHeight: 16,
-            ),
+  Goblin(Position initPosition)
+      : super(
+            animation: EnemySpriteSheet.simpleDirectionAnimation,
             initPosition: initPosition,
-            width: 25,
-            height: 25,
-            speed: 1.5,
+            width: DungeonMap.tileSize * 0.8,
+            height: DungeonMap.tileSize * 0.8,
+            speed: DungeonMap.tileSize * 1.6,
             life: 100,
             collision: Collision(
-              height: 12,
-              width: 12,
-              align: CollisionAlign.CENTER,
-            ));
+                height: DungeonMap.tileSize * 0.4,
+                width: DungeonMap.tileSize * 0.4,
+                align: Offset(
+                  DungeonMap.tileSize * 0.2,
+                  DungeonMap.tileSize * 0.4,
+                )));
 
   @override
   void update(double dt) {
+    super.update(dt);
     if (this.isDead) return;
 
     _seePlayerClose = false;
     this.seePlayer(
-        observed: (player) {
-          _seePlayerClose = true;
-          this.seeAndMoveToPlayer(
-            closePlayer: (player) {
-              execAttack();
-            },
-            visionCells: 3,
-          );
-        },
-        visionCells: 3);
+      observed: (player) {
+        _seePlayerClose = true;
+        this.seeAndMoveToPlayer(
+          closePlayer: (player) {
+            execAttack();
+          },
+          radiusVision: DungeonMap.tileSize * 2,
+        );
+      },
+      radiusVision: DungeonMap.tileSize * 2,
+    );
 
     if (!_seePlayerClose) {
       this.seeAndMoveToAttackRange(
+        minDistanceFromPlayer: DungeonMap.tileSize * 4,
         positioned: (p) {
           execAttackRange();
         },
-        visionCells: 8,
+        radiusVision: DungeonMap.tileSize * 5,
       );
     }
-
-    super.update(dt);
   }
 
   @override
@@ -85,101 +66,64 @@ class Goblin extends Enemy {
   void die() {
     gameRef.add(
       AnimatedObjectOnce(
-          animation: FlameAnimation.Animation.sequenced(
-            "smoke_explosin.png",
-            6,
-            textureWidth: 16,
-            textureHeight: 16,
-          ),
-          position: positionInWorld),
+        animation: CommonSpriteSheet.smokeExplosion,
+        position: position,
+      ),
     );
     remove();
     super.die();
   }
 
   void execAttackRange() {
+    if (gameRef.player != null && gameRef.player.isDead) return;
     this.simpleAttackRange(
-        animationRight: FlameAnimation.Animation.sequenced(
-          'player/fireball_right.png',
-          3,
-          textureWidth: 23,
-          textureHeight: 23,
+      animationRight: CommonSpriteSheet.fireBallRight,
+      animationLeft: CommonSpriteSheet.fireBallLeft,
+      animationTop: CommonSpriteSheet.fireBallTop,
+      animationBottom: CommonSpriteSheet.fireBallBottom,
+      animationDestroy: CommonSpriteSheet.explosionAnimation,
+      id: 35,
+      width: width * 0.9,
+      height: width * 0.9,
+      damage: attack,
+      speed: DungeonMap.tileSize * 3,
+      collision: Collision(
+        width: width / 2,
+        height: width / 2,
+        align: Offset(
+          width * 0.2,
+          width * 0.2,
         ),
-        animationLeft: FlameAnimation.Animation.sequenced(
-          'player/fireball_left.png',
-          3,
-          textureWidth: 23,
-          textureHeight: 23,
-        ),
-        animationTop: FlameAnimation.Animation.sequenced(
-          'player/fireball_top.png',
-          3,
-          textureWidth: 23,
-          textureHeight: 23,
-        ),
-        animationBottom: FlameAnimation.Animation.sequenced(
-          'player/fireball_bottom.png',
-          3,
-          textureWidth: 23,
-          textureHeight: 23,
-        ),
-        animationDestroy: FlameAnimation.Animation.sequenced(
-          'player/explosion_fire.png',
-          6,
-          textureWidth: 32,
-          textureHeight: 32,
-        ),
-        width: 25,
-        height: 25,
-        damage: attack,
-        speed: speed * 1.5,
-        execute: () {
-          print('attack range');
-        },
-        destroy: () {
-          print('destroy attack range');
-        });
+      ),
+      lightingConfig: LightingConfig(
+        radius: width,
+        blurBorder: width * 0.5,
+      ),
+    );
   }
 
   void execAttack() {
+    if (gameRef.player != null && gameRef.player.isDead) return;
     this.simpleAttackMelee(
-        heightArea: 25,
-        widthArea: 25,
-        damage: attack / 2,
-        interval: 400,
-        withPush: true,
-        attackEffectBottomAnim: FlameAnimation.Animation.sequenced(
-          'enemy/atack_effect_bottom.png',
-          6,
-          textureWidth: 16,
-          textureHeight: 16,
-        ),
-        attackEffectLeftAnim: FlameAnimation.Animation.sequenced(
-          'enemy/atack_effect_left.png',
-          6,
-          textureWidth: 16,
-          textureHeight: 16,
-        ),
-        attackEffectRightAnim: FlameAnimation.Animation.sequenced(
-          'enemy/atack_effect_right.png',
-          6,
-          textureWidth: 16,
-          textureHeight: 16,
-        ),
-        attackEffectTopAnim: FlameAnimation.Animation.sequenced(
-          'enemy/atack_effect_top.png',
-          6,
-          textureWidth: 16,
-          textureHeight: 16,
-        ),
-        execute: () {
-          print('attack meele');
-        });
+      heightArea: width,
+      widthArea: width,
+      damage: attack / 2,
+      interval: 400,
+      attackEffectBottomAnim: CommonSpriteSheet.blackAttackEffectBottom,
+      attackEffectLeftAnim: CommonSpriteSheet.blackAttackEffectLeft,
+      attackEffectRightAnim: CommonSpriteSheet.blackAttackEffectRight,
+      attackEffectTopAnim: CommonSpriteSheet.blackAttackEffectTop,
+    );
   }
 
   @override
-  void receiveDamage(double damage) {
-    this.showDamage(damage);
-    super.receiveDamage(damage);
+  void receiveDamage(double damage, dynamic from) {
+    print(from);
+    this.showDamage(damage,
+        config: TextConfig(
+          fontSize: width / 3,
+          color: Colors.white,
+        ));
+    super.receiveDamage(damage, from);
   }
 }

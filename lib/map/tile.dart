@@ -1,68 +1,148 @@
+import 'dart:math';
 import 'dart:ui';
 
-import 'package:bonfire/util/objects/sprite_object.dart';
+import 'package:bonfire/base/game_component.dart';
+import 'package:bonfire/util/collision/collision.dart';
+import 'package:bonfire/util/collision/object_collision.dart';
+import 'package:bonfire/util/controlled_update_animation.dart';
 import 'package:flame/position.dart';
 import 'package:flame/sprite.dart';
 import 'package:flame/text_config.dart';
 import 'package:flutter/material.dart';
 
-class Tile extends SpriteObject {
-  final bool collision;
-  final double size;
-  TextConfig _textConfig;
+class Tile extends GameComponent with ObjectCollision {
+  Sprite sprite;
+  ControlledUpdateAnimation animation;
+  final double width;
+  final double height;
+  final String type;
   Position _positionText;
-  Paint _paintText = Paint()
-    ..style = PaintingStyle.stroke
-    ..strokeWidth = 1;
+  Paint _paintText;
 
   Tile(
     String spritePath,
     Position position, {
-    this.collision = false,
-    this.size = 32,
+    Collision collision,
+    this.width = 32,
+    this.height = 32,
+    this.type,
   }) {
-    this.position = positionInWorld = generateRectWithBleedingPixel(position);
+    if (collision != null) collisions = [collision];
+    this.position = generateRectWithBleedingPixel(position, width, height);
     if (spritePath.isNotEmpty) sprite = Sprite(spritePath);
 
-    _textConfig = TextConfig(
-      fontSize: size / 3.5,
-    );
     _positionText = Position(position.x, position.y);
   }
 
   Tile.fromSprite(
     Sprite sprite,
     Position position, {
-    this.collision = false,
-    this.size = 32,
+    Collision collision,
+    this.width = 32,
+    this.height = 32,
+    this.type,
   }) {
+    if (collision != null) this.collisions = [collision];
     this.sprite = sprite;
-    this.position = positionInWorld = generateRectWithBleedingPixel(position);
+    this.position = generateRectWithBleedingPixel(position, width, height);
 
-    _textConfig = TextConfig(
-      fontSize: size / 3.5,
+    _positionText = Position(position.x, position.y);
+  }
+
+  Tile.fromSpriteMultiCollision(
+    Sprite sprite,
+    Position position, {
+    List<Collision> collisions,
+    this.width = 32,
+    this.height = 32,
+    this.type,
+    double offsetX = 0,
+    double offsetY = 0,
+  }) {
+    if (collisions != null) this.collisions = [...collisions];
+    this.sprite = sprite;
+    this.position = generateRectWithBleedingPixel(
+      position,
+      width,
+      height,
+      offsetX: offsetX,
+      offsetY: offsetY,
     );
+
+    _positionText = Position(position.x, position.y);
+  }
+
+  Tile.fromAnimation(
+    ControlledUpdateAnimation animation,
+    Position position, {
+    Collision collision,
+    this.width = 32,
+    this.height = 32,
+    this.type,
+  }) {
+    this.animation = animation;
+    if (collision != null) this.collisions = [collision];
+    this.position = generateRectWithBleedingPixel(position, width, height);
+
+    _positionText = Position(position.x, position.y);
+  }
+
+  Tile.fromAnimationMultiCollision(
+    ControlledUpdateAnimation animation,
+    Position position, {
+    List<Collision> collisions,
+    this.width = 32,
+    this.height = 32,
+    this.type,
+    double offsetX = 0,
+    double offsetY = 0,
+  }) {
+    this.animation = animation;
+    if (collisions != null) this.collisions = [...collisions];
+    this.position = generateRectWithBleedingPixel(
+      position,
+      width,
+      height,
+      offsetX: offsetX,
+      offsetY: offsetY,
+    );
+
     _positionText = Position(position.x, position.y);
   }
 
   @override
   void render(Canvas canvas) {
-    super.render(canvas);
+    if (position == null) return;
+    animation?.render(canvas, position);
+    if (sprite?.loaded() ?? false) {
+      sprite.renderRect(canvas, position);
+    }
 
-    if (gameRef != null && gameRef.showCollisionArea && collision)
-      _drawCollision(canvas);
-    if (gameRef != null && gameRef.constructionMode && isVisibleInMap())
+    if (gameRef?.showCollisionArea ?? false) {
+      drawCollision(canvas, position, gameRef?.collisionAreaColor);
+    }
+
+    if ((gameRef?.constructionMode ?? false) && isVisibleInCamera()) {
       _drawGrid(canvas);
+    }
+    super.render(canvas);
   }
 
   void _drawGrid(Canvas canvas) {
+    if (_paintText == null) {
+      _paintText = Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1;
+    }
     canvas.drawRect(
       position,
       _paintText
         ..color = gameRef.constructionModeColor ?? Colors.cyan.withOpacity(0.5),
     );
     if (_positionText.x % 2 == 0) {
-      _textConfig
+      TextConfig(
+        fontSize: width / 3.5,
+      )
           .withColor(
             gameRef.constructionModeColor ?? Colors.cyan.withOpacity(0.5),
           )
@@ -74,21 +154,29 @@ class Tile extends SpriteObject {
     }
   }
 
-  Rect generateRectWithBleedingPixel(Position position) {
+  Rect generateRectWithBleedingPixel(
+      Position position, double width, double height,
+      {double offsetX = 0, double offsetY = 0}) {
+    double sizeMax = max(width, height);
+    double bleendingPixel = sizeMax * 0.04;
+    if (bleendingPixel > 3) {
+      bleendingPixel = 3;
+    }
     return Rect.fromLTWH(
-      (position.x * size) - (position.x % 2 == 0 ? 0.5 : 0),
-      (position.y * size) - (position.y % 2 == 0 ? 0.5 : 0),
-      size + (position.x % 2 == 0 ? 1 : 0),
-      size + (position.y % 2 == 0 ? 1 : 0),
+      (position.x * width) -
+          (position.x % 2 == 0 ? (bleendingPixel / 2) : 0) +
+          offsetX,
+      (position.y * height) -
+          (position.y % 2 == 0 ? (bleendingPixel / 2) : 0) +
+          offsetY,
+      width + (position.x % 2 == 0 ? bleendingPixel : 0),
+      height + (position.y % 2 == 0 ? bleendingPixel : 0),
     );
   }
 
-  void _drawCollision(Canvas canvas) {
-    canvas.drawRect(
-      position,
-      new Paint()
-        ..color = gameRef.collisionAreaColor ??
-            Colors.lightGreenAccent.withOpacity(0.5),
-    );
+  @override
+  void update(double dt) {
+    animation?.update(dt);
+    super.update(dt);
   }
 }

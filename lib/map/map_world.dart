@@ -3,45 +3,67 @@ import 'dart:ui';
 import 'package:bonfire/bonfire.dart';
 import 'package:bonfire/map/map_game.dart';
 import 'package:bonfire/map/tile.dart';
+import 'package:flutter/cupertino.dart';
 
 class MapWorld extends MapGame {
   double lastCameraX = -1;
   double lastCameraY = -1;
-  Size lastSize;
-  Iterable<Tile> tilesToRender = List();
-  Iterable<Tile> tilesCollisionsRendered = List();
+  double lastZoom = -1;
+  Size lastSizeScreen;
+  Iterable<Tile> _tilesToRender = List();
+  Iterable<Tile> _tilesCollisionsRendered = List();
+  Iterable<Tile> _tilesCollisions = List();
 
-  MapWorld(Iterable<Tile> tiles) : super(tiles);
+  MapWorld(Iterable<Tile> tiles) : super(tiles) {
+    _tilesCollisions = tiles.where((element) => element.containCollision());
+  }
 
   @override
   void render(Canvas canvas) {
-    tilesToRender.forEach((tile) => tile.render(canvas));
+    for (final tile in _tilesToRender) {
+      tile.render(canvas);
+    }
   }
 
   @override
   void update(double t) {
     if (lastCameraX != gameRef.gameCamera.position.x ||
-        gameRef.gameCamera.position.y != lastCameraY) {
+        lastCameraY != gameRef.gameCamera.position.y ||
+        lastZoom != gameRef.gameCamera.zoom) {
       lastCameraX = gameRef.gameCamera.position.x;
       lastCameraY = gameRef.gameCamera.position.y;
+      lastZoom = gameRef.gameCamera.zoom;
 
-      tiles.forEach((tile) {
-        tile.gameRef = gameRef;
-        tile.update(t);
-      });
-      tilesToRender = tiles.where((i) => i.isVisibleInMap());
-      tilesCollisionsRendered = tilesToRender.where((i) => i.collision);
+      List<Tile> tilesRender = List();
+      List<Tile> tilesCollision = List();
+      for (final tile in tiles) {
+        tile.gameRef ??= gameRef;
+        if (tile.isVisibleInCamera()) {
+          tilesRender.add(tile);
+          if (tile.containCollision()) tilesCollision.add(tile);
+        }
+      }
+      _tilesToRender = tilesRender;
+      _tilesCollisionsRendered = tilesCollision;
+    }
+    for (final tile in _tilesToRender) {
+      tile.update(t);
     }
   }
 
   @override
-  List<Tile> getRendered() {
-    return tilesToRender.toList();
+  Iterable<Tile> getRendered() {
+    return _tilesToRender;
   }
 
   @override
-  List<Tile> getCollisionsRendered() {
-    return tilesCollisionsRendered.toList();
+  Iterable<Tile> getCollisionsRendered() {
+    return _tilesCollisionsRendered;
+  }
+
+  @override
+  Iterable<Tile> getCollisions() {
+    return _tilesCollisions;
   }
 
   @override
@@ -51,45 +73,52 @@ class MapWorld extends MapGame {
   }
 
   void verifyMaxTopAndLeft(Size size) {
-    if (lastSize == size) return;
-    lastSize = size;
-    double maxTop = 0;
-    double maxLeft = 0;
-    maxTop = tiles.fold(0, (max, tile) {
-      if (tile.positionInWorld.bottom > max)
-        return tile.positionInWorld.bottom;
-      else
-        return max;
-    });
-
-    maxTop -= size.height;
-
-    maxLeft = tiles.fold(0, (max, tile) {
-      if (tile.positionInWorld.right > max)
-        return tile.positionInWorld.right;
-      else
-        return max;
-    });
-    maxLeft -= size.width;
-
-    gameRef.gameCamera.maxLeft = maxLeft;
-    gameRef.gameCamera.maxTop = maxTop;
+    if (lastSizeScreen == size) return;
+    lastSizeScreen = size;
 
     lastCameraX = -1;
     lastCameraY = -1;
-
-    if (gameRef.player != null && !gameRef.player.usePositionInWorld) {
-      gameRef.player.usePositionInWorldToRender();
-    }
-    gameRef.gameCamera.moveToPlayer();
+    lastZoom = -1;
+    mapSize = getMapSize();
+    mapStartPosition = getStartPosition();
   }
 
   @override
   void updateTiles(Iterable<Tile> map) {
     lastCameraX = -1;
     lastCameraY = -1;
-    lastSize = null;
+    lastZoom = -1;
+    lastSizeScreen = null;
     this.tiles = map;
     verifyMaxTopAndLeft(gameRef.size);
+  }
+
+  @override
+  Size getMapSize() {
+    double height = 0;
+    double width = 0;
+
+    this.tiles.forEach((tile) {
+      if (tile.position.right > width) width = tile.position.right;
+      if (tile.position.bottom > height) height = tile.position.bottom;
+    });
+
+    return Size(width, height);
+  }
+
+  Position getStartPosition() {
+    try {
+      double x = this.tiles.first.position.left;
+      double y = this.tiles.first.position.top;
+
+      this.tiles.forEach((tile) {
+        if (tile.position.left < x) x = tile.position.left;
+        if (tile.position.top < y) y = tile.position.top;
+      });
+
+      return Position(x, y);
+    } catch (e) {
+      return Position.empty();
+    }
   }
 }

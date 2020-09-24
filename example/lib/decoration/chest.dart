@@ -1,11 +1,15 @@
 import 'package:bonfire/bonfire.dart';
 import 'package:example/decoration/potion_life.dart';
+import 'package:example/map/dungeon_map.dart';
 import 'package:flame/animation.dart' as FlameAnimation;
 import 'package:flame/position.dart';
+import 'package:flutter/material.dart';
 
-class Chest extends GameDecoration {
+class Chest extends GameDecoration with TapGesture {
   final Position initPosition;
   bool _observedPlayer = false;
+
+  TextConfig _textConfig;
   Chest(this.initPosition)
       : super.animation(
           FlameAnimation.Animation.sequenced(
@@ -14,15 +18,18 @@ class Chest extends GameDecoration {
             textureWidth: 16,
             textureHeight: 16,
           ),
-          width: 20,
-          height: 20,
+          width: DungeonMap.tileSize * 0.6,
+          height: DungeonMap.tileSize * 0.6,
           initPosition: initPosition,
-          isTouchable: true,
-        );
+        ) {
+    _textConfig = TextConfig(
+      color: Colors.white,
+      fontSize: width / 2,
+    );
+  }
 
   @override
   void update(double dt) {
-    if (!this.isVisibleInMap()) return;
     this.seePlayer(
       observed: (player) {
         if (!_observedPlayer) {
@@ -35,8 +42,20 @@ class Chest extends GameDecoration {
       },
       visionCells: 1,
     );
-
     super.update(dt);
+  }
+
+  @override
+  void render(Canvas canvas) {
+    super.render(canvas);
+    if (_observedPlayer) {
+      _textConfig.render(
+        canvas,
+        'Touch me !!',
+        Position(
+            position.left - width / 1.5, position.center.dy - (height + 5)),
+      );
+    }
   }
 
   @override
@@ -45,25 +64,24 @@ class Chest extends GameDecoration {
       _addPotions();
       remove();
     }
-    super.onTap();
   }
 
   void _addPotions() {
-    gameRef.addDecoration(
+    gameRef.addGameComponent(
       PotionLife(
         Position(
-          positionInWorld.translate(width * 2, 0).left,
-          positionInWorld.top - height * 2,
+          position.translate(width * 2, 0).left,
+          position.top - height * 2,
         ),
         30,
       ),
     );
 
-    gameRef.addDecoration(
+    gameRef.addGameComponent(
       PotionLife(
         Position(
-          positionInWorld.translate(width * 2, 0).left,
-          positionInWorld.top + height * 2,
+          position.translate(width * 2, 0).left,
+          position.top + height * 2,
         ),
         30,
       ),
@@ -77,7 +95,7 @@ class Chest extends GameDecoration {
           textureWidth: 16,
           textureHeight: 16,
         ),
-        position: positionInWorld.translate(width * 2, 0),
+        position: position.translate(width * 2, 0),
       ),
     );
 
@@ -89,7 +107,7 @@ class Chest extends GameDecoration {
           textureWidth: 16,
           textureHeight: 16,
         ),
-        position: positionInWorld.translate(width * 2, height * 2),
+        position: position.translate(width * 2, height * 2),
       ),
     );
   }
@@ -104,9 +122,7 @@ class Chest extends GameDecoration {
           textureHeight: 32,
         ),
         target: this,
-        width: 16,
-        height: 16,
-        positionFromTarget: Position(18, -6),
+        positionFromTarget: Rect.fromLTWH(18, -6, 16, 16),
       ),
     );
   }

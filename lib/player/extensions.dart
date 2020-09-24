@@ -1,12 +1,15 @@
+import 'dart:math';
 import 'dart:ui';
 
 import 'package:bonfire/bonfire.dart';
 import 'package:bonfire/enemy/enemy.dart';
+import 'package:bonfire/lighting/lighting_config.dart';
+import 'package:bonfire/objects/animated_object_once.dart';
+import 'package:bonfire/objects/flying_attack_angle_object.dart';
+import 'package:bonfire/objects/flying_attack_object.dart';
 import 'package:bonfire/player/player.dart';
-import 'package:bonfire/util/direction.dart';
-import 'package:bonfire/util/objects/animated_object_once.dart';
-import 'package:bonfire/util/objects/flying_attack_object.dart';
-import 'package:bonfire/util/text_damage.dart';
+import 'package:bonfire/util/collision/object_collision.dart';
+import 'package:bonfire/util/text_damage_component.dart';
 import 'package:flame/animation.dart' as FlameAnimation;
 import 'package:flame/position.dart';
 import 'package:flame/text_config.dart';
@@ -14,119 +17,203 @@ import 'package:flutter/material.dart';
 import 'package:flutter/widgets.dart';
 
 extension PlayerExtensions on Player {
-  void simpleAttackMelee({
-    @required FlameAnimation.Animation attackEffectRightAnim,
-    @required FlameAnimation.Animation attackEffectBottomAnim,
-    @required FlameAnimation.Animation attackEffectLeftAnim,
-    @required FlameAnimation.Animation attackEffectTopAnim,
-    @required double damage,
-    double heightArea = 32,
-    double widthArea = 32,
-    bool withPush = true,
+  void showDamage(
+    double damage, {
+    TextConfig config,
+    double initVelocityTop = -5,
+    double gravity = 0.5,
+    bool onlyUp = false,
+    DirectionTextDamage direction = DirectionTextDamage.RANDOM,
+  }) {
+    gameRef.addLater(
+      TextDamageComponent(
+        damage.toInt().toString(),
+        Position(
+          position.center.dx,
+          position.top,
+        ),
+        config: config ??
+            TextConfig(
+              fontSize: 14,
+              color: Colors.red,
+            ),
+        initVelocityTop: initVelocityTop,
+        gravity: gravity,
+        direction: direction,
+        onlyUp: onlyUp,
+      ),
+    );
+  }
+
+  void seeEnemy({
+    Function(List<Enemy>) observed,
+    Function() notObserved,
+    double radiusVision = 32,
+  }) {
+    if (isDead || this.position == null) return;
+
+    var enemiesInLife = this.gameRef.visibleEnemies();
+    if (enemiesInLife.isEmpty) {
+      if (notObserved != null) notObserved();
+      return;
+    }
+
+    double visionWidth = radiusVision * 2;
+    double visionHeight = radiusVision * 2;
+
+    Rect fieldOfVision = Rect.fromLTWH(
+      this.position.center.dx - radiusVision,
+      this.position.center.dy - radiusVision,
+      visionWidth,
+      visionHeight,
+    );
+
+    List<Enemy> enemiesObserved = enemiesInLife
+        .where((enemy) =>
+            enemy.position != null && fieldOfVision.overlaps(enemy.position))
+        .toList();
+
+    if (enemiesObserved.isNotEmpty) {
+      if (observed != null) observed(enemiesObserved);
+    } else {
+      if (notObserved != null) notObserved();
+    }
+  }
+
+  void simpleAttackRangeByAngle({
+    @required FlameAnimation.Animation animationTop,
+    @required double width,
+    @required double height,
+    @required double radAngleDirection,
+    FlameAnimation.Animation animationDestroy,
+    dynamic id,
+    double speed = 150,
+    double damage = 1,
+    bool withCollision = true,
+    bool collisionOnlyVisibleObjects = true,
+    VoidCallback destroy,
+    Collision collision,
+    LightingConfig lightingConfig,
   }) {
     if (isDead) return;
 
-    Rect positionAttack;
-    FlameAnimation.Animation anim = attackEffectRightAnim;
-    double pushLeft = 0;
-    double pushTop = 0;
-    switch (lastDirection) {
-      case Direction.top:
-        positionAttack = Rect.fromLTWH(positionInWorld.left,
-            positionInWorld.top - heightArea, widthArea, heightArea);
-        if (attackEffectTopAnim != null) anim = attackEffectTopAnim;
-        pushTop = heightArea * -1;
-        break;
-      case Direction.right:
-        positionAttack = Rect.fromLTWH(positionInWorld.left + widthArea,
-            positionInWorld.top, widthArea, heightArea);
-        if (attackEffectRightAnim != null) anim = attackEffectRightAnim;
-        pushLeft = widthArea;
-        break;
-      case Direction.bottom:
-        positionAttack = Rect.fromLTWH(positionInWorld.left,
-            positionInWorld.top + heightArea, widthArea, heightArea);
-        if (attackEffectBottomAnim != null) anim = attackEffectBottomAnim;
-        pushTop = heightArea;
-        break;
-      case Direction.left:
-        positionAttack = Rect.fromLTWH(positionInWorld.left - widthArea,
-            positionInWorld.top, widthArea, heightArea);
-        if (attackEffectLeftAnim != null) anim = attackEffectLeftAnim;
-        pushLeft = widthArea * -1;
-        break;
-    }
+    double angle = radAngleDirection;
+    double nextX = this.height * cos(angle);
+    double nextY = this.height * sin(angle);
+    Offset nextPoint = Offset(nextX, nextY);
 
-    gameRef.add(AnimatedObjectOnce(animation: anim, position: positionAttack));
+    Offset diffBase = Offset(this.position.center.dx + nextPoint.dx,
+            this.position.center.dy + nextPoint.dy) -
+        this.position.center;
 
-    gameRef.visibleEnemies().forEach((enemy) {
-      if (enemy.rectCollisionInWorld.overlaps(positionAttack)) {
-        enemy.receiveDamage(damage);
-        Rect rectAfterPush = enemy.position.translate(pushLeft, pushTop);
-        if (withPush && !enemy.isCollision(rectAfterPush, this.gameRef)) {
-          enemy.translate(pushLeft, pushTop);
-        }
-      }
-    });
+    Rect position = this.position.shift(diffBase);
+    gameRef.addLater(FlyingAttackAngleObject(
+      id: id,
+      initPosition: Position(position.left, position.top),
+      radAngle: angle,
+      width: width,
+      height: height,
+      damage: damage,
+      speed: speed,
+      damageInPlayer: false,
+      collision: collision,
+      withCollision: withCollision,
+      destroyedObject: destroy,
+      flyAnimation: animationTop,
+      destroyAnimation: animationDestroy,
+      lightingConfig: lightingConfig,
+      collisionOnlyVisibleObjects: collisionOnlyVisibleObjects,
+    ));
   }
 
-  void simpleAttackRange({
+  void simpleAttackRangeByDirection({
     @required FlameAnimation.Animation animationRight,
     @required FlameAnimation.Animation animationLeft,
     @required FlameAnimation.Animation animationTop,
     @required FlameAnimation.Animation animationBottom,
-    @required FlameAnimation.Animation animationDestroy,
+    FlameAnimation.Animation animationDestroy,
     @required double width,
     @required double height,
-    double speed = 1.5,
+    @required Direction direction,
+    dynamic id,
+    double speed = 150,
     double damage = 1,
     bool withCollision = true,
+    bool collisionOnlyVisibleObjects = true,
     VoidCallback destroy,
     Collision collision,
+    LightingConfig lightingConfig,
   }) {
     if (isDead) return;
 
     Position startPosition;
     FlameAnimation.Animation attackRangeAnimation;
 
-    switch (this.lastDirection) {
+    Direction attackDirection = direction;
+
+    switch (attackDirection) {
       case Direction.left:
         if (animationLeft != null) attackRangeAnimation = animationLeft;
         startPosition = Position(
-          this.rectCollisionInWorld.left - width,
-          (this.rectCollisionInWorld.top +
-              (this.rectCollisionInWorld.height - height) / 2),
+          this.rectCollision.left - width,
+          (this.rectCollision.top + (this.rectCollision.height - height) / 2),
         );
         break;
       case Direction.right:
         if (animationRight != null) attackRangeAnimation = animationRight;
         startPosition = Position(
-          this.rectCollisionInWorld.right,
-          (this.rectCollisionInWorld.top +
-              (this.rectCollisionInWorld.height - height) / 2),
+          this.rectCollision.right,
+          (this.rectCollision.top + (this.rectCollision.height - height) / 2),
         );
         break;
       case Direction.top:
         if (animationTop != null) attackRangeAnimation = animationTop;
         startPosition = Position(
-          (this.rectCollisionInWorld.left +
-              (this.rectCollisionInWorld.width - width) / 2),
-          this.rectCollisionInWorld.top - height,
+          (this.rectCollision.left + (this.rectCollision.width - width) / 2),
+          this.rectCollision.top - height,
         );
         break;
       case Direction.bottom:
         if (animationBottom != null) attackRangeAnimation = animationBottom;
         startPosition = Position(
-          (this.rectCollisionInWorld.left +
-              (this.rectCollisionInWorld.width - width) / 2),
-          this.rectCollisionInWorld.bottom,
+          (this.rectCollision.left + (this.rectCollision.width - width) / 2),
+          this.rectCollision.bottom,
+        );
+        break;
+      case Direction.topLeft:
+        if (animationLeft != null) attackRangeAnimation = animationLeft;
+        startPosition = Position(
+          this.rectCollision.left - width,
+          (this.rectCollision.top + (this.rectCollision.height - height) / 2),
+        );
+        break;
+      case Direction.topRight:
+        if (animationRight != null) attackRangeAnimation = animationRight;
+        startPosition = Position(
+          this.rectCollision.right,
+          (this.rectCollision.top + (this.rectCollision.height - height) / 2),
+        );
+        break;
+      case Direction.bottomLeft:
+        if (animationLeft != null) attackRangeAnimation = animationLeft;
+        startPosition = Position(
+          this.rectCollision.left - width,
+          (this.rectCollision.top + (this.rectCollision.height - height) / 2),
+        );
+        break;
+      case Direction.bottomRight:
+        if (animationRight != null) attackRangeAnimation = animationRight;
+        startPosition = Position(
+          this.rectCollision.right,
+          (this.rectCollision.top + (this.rectCollision.height - height) / 2),
         );
         break;
     }
 
-    gameRef.add(
+    gameRef.addLater(
       FlyingAttackObject(
-        direction: lastDirection,
+        id: id,
+        direction: attackDirection,
         flyAnimation: attackRangeAnimation,
         destroyAnimation: animationDestroy,
         initPosition: startPosition,
@@ -137,64 +224,186 @@ extension PlayerExtensions on Player {
         damageInPlayer: false,
         destroyedObject: destroy,
         withCollision: withCollision,
-        collision: collision ??
-            Collision(
-              width: width / 1.5,
-              height: height / 2,
-              align: CollisionAlign.CENTER,
-            ),
+        collision: collision,
+        lightingConfig: lightingConfig,
+        collisionOnlyVisibleObjects: collisionOnlyVisibleObjects,
       ),
     );
   }
 
-  void showDamage(double damage,
-      {TextConfig config = const TextConfig(
-        fontSize: 10,
-        color: Colors.red,
-      )}) {
-    gameRef.add(
-      TextDamage(
-        damage.toInt().toString(),
-        Position(
-          positionInWorld.center.dx,
-          positionInWorld.top,
-        ),
-        config: config,
-      ),
-    );
-  }
-
-  void seeEnemy({
-    Function(List<Enemy>) observed,
-    Function() notObserved,
-    int visionCells = 3,
+  void simpleAttackMeleeByDirection({
+    FlameAnimation.Animation animationRight,
+    FlameAnimation.Animation animationBottom,
+    FlameAnimation.Animation animationLeft,
+    FlameAnimation.Animation animationTop,
+    @required double damage,
+    @required Direction direction,
+    dynamic id,
+    double heightArea = 32,
+    double widthArea = 32,
+    bool withPush = true,
+    double sizePush,
   }) {
-    if (isDead || position == null) return;
+    if (isDead) return;
 
-    var enemiesInLife = this.gameRef.enemies.where((e) => !e.isDead);
-    if (enemiesInLife.length == 0) {
-      if (notObserved != null) notObserved();
-      return;
+    Rect positionAttack;
+    FlameAnimation.Animation anim;
+    double pushLeft = 0;
+    double pushTop = 0;
+    Direction attackDirection = direction;
+    switch (attackDirection) {
+      case Direction.top:
+        positionAttack = Rect.fromLTWH(
+          this.position.left + (this.width - widthArea) / 2,
+          rectCollision.top - heightArea,
+          widthArea,
+          heightArea,
+        );
+        if (animationTop != null) anim = animationTop;
+        pushTop = (sizePush ?? heightArea) * -1;
+        break;
+      case Direction.right:
+        positionAttack = Rect.fromLTWH(
+          rectCollision.right,
+          this.position.top + (this.height - heightArea) / 2,
+          widthArea,
+          heightArea,
+        );
+        if (animationRight != null) anim = animationRight;
+        pushLeft = (sizePush ?? widthArea);
+        break;
+      case Direction.bottom:
+        positionAttack = Rect.fromLTWH(
+          this.position.left + (this.width - widthArea) / 2,
+          this.rectCollision.bottom,
+          widthArea,
+          heightArea,
+        );
+        if (animationBottom != null) anim = animationBottom;
+        pushTop = (sizePush ?? heightArea);
+        break;
+      case Direction.left:
+        positionAttack = Rect.fromLTWH(
+          this.rectCollision.left - widthArea,
+          this.position.top + (this.height - heightArea) / 2,
+          widthArea,
+          heightArea,
+        );
+        if (animationLeft != null) anim = animationLeft;
+        pushLeft = (sizePush ?? widthArea) * -1;
+        break;
+      case Direction.topLeft:
+        positionAttack = Rect.fromLTWH(
+          this.rectCollision.left - widthArea,
+          this.position.top + (this.height - heightArea) / 2,
+          widthArea,
+          heightArea,
+        );
+        if (animationLeft != null) anim = animationLeft;
+        pushLeft = (sizePush ?? widthArea) * -1;
+        break;
+      case Direction.topRight:
+        positionAttack = Rect.fromLTWH(
+          rectCollision.right,
+          this.position.top + (this.height - heightArea) / 2,
+          widthArea,
+          heightArea,
+        );
+        if (animationRight != null) anim = animationRight;
+        pushLeft = (sizePush ?? widthArea);
+        break;
+      case Direction.bottomLeft:
+        positionAttack = Rect.fromLTWH(
+          this.rectCollision.left - widthArea,
+          this.position.top + (this.height - heightArea) / 2,
+          widthArea,
+          heightArea,
+        );
+        if (animationLeft != null) anim = animationLeft;
+        pushLeft = (sizePush ?? widthArea) * -1;
+        break;
+      case Direction.bottomRight:
+        positionAttack = Rect.fromLTWH(
+          rectCollision.right,
+          this.position.top + (this.height - heightArea) / 2,
+          widthArea,
+          heightArea,
+        );
+        if (animationRight != null) anim = animationRight;
+        pushLeft = (sizePush ?? widthArea);
+        break;
     }
 
-    double visionWidth = position.width * visionCells * 2;
-    double visionHeight = position.height * visionCells * 2;
+    if (anim != null) {
+      gameRef.addLater(AnimatedObjectOnce(
+        animation: anim,
+        position: positionAttack,
+      ));
+    }
 
-    Rect fieldOfVision = Rect.fromLTWH(
-      position.left - (visionWidth / 2),
-      position.top - (visionHeight / 2),
-      visionWidth,
-      visionHeight,
+    gameRef
+        .attackables()
+        .where((a) =>
+            !a.isAttackablePlayer &&
+            a.rectAttackable().overlaps(positionAttack))
+        .forEach(
+      (enemy) {
+        enemy.receiveDamage(damage, id);
+        Rect rectAfterPush = enemy.position.translate(pushLeft, pushTop);
+        if (withPush &&
+            (enemy is ObjectCollision &&
+                !(enemy as ObjectCollision)
+                    .isCollision(rectAfterPush, this.gameRef))) {
+          enemy.translate(pushLeft, pushTop);
+        }
+      },
     );
+  }
 
-    List<Enemy> enemiesObserved = enemiesInLife
-        .where((enemy) => fieldOfVision.overlaps(enemy.position))
-        .toList();
+  void simpleAttackMeleeByAngle({
+    @required FlameAnimation.Animation animationTop,
+    @required double damage,
+    @required double radAngleDirection,
+    dynamic id,
+    double heightArea = 32,
+    double widthArea = 32,
+    bool withPush = true,
+  }) {
+    if (isDead) return;
 
-    if (enemiesObserved.length > 0) {
-      if (observed != null) observed(enemiesObserved);
-    } else {
-      if (notObserved != null) notObserved();
-    }
+    double angle = radAngleDirection;
+
+    double nextX = this.height * cos(angle);
+    double nextY = this.height * sin(angle);
+    Offset nextPoint = Offset(nextX, nextY);
+
+    Offset diffBase = Offset(this.position.center.dx + nextPoint.dx,
+            this.position.center.dy + nextPoint.dy) -
+        this.position.center;
+
+    Rect positionAttack = this.position.shift(diffBase);
+
+    gameRef.addLater(AnimatedObjectOnce(
+      animation: animationTop,
+      position: positionAttack,
+      rotateRadAngle: angle,
+    ));
+
+    gameRef
+        .attackables()
+        .where((a) =>
+            !a.isAttackablePlayer &&
+            a.rectAttackable().overlaps(positionAttack))
+        .forEach((enemy) {
+      enemy.receiveDamage(damage, id);
+      Rect rectAfterPush =
+          (enemy as GameComponent).position.translate(diffBase.dx, diffBase.dy);
+      if (withPush &&
+          (enemy is ObjectCollision &&
+              !(enemy as ObjectCollision)
+                  .isCollision(rectAfterPush, this.gameRef))) {
+        (enemy as GameComponent).translate(diffBase.dx, diffBase.dy);
+      }
+    });
   }
 }
